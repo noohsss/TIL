@@ -1,4 +1,4 @@
-# ⌨️ TIL - Git 및 Terminal 기본 명령어
+# ⌨️ TIL - Git/Terminal 기본 명령어 및 Markdown 문법
 
 ## ❗️ Git 작업 흐름
 
@@ -97,6 +97,87 @@ rm -r project
 # 파일 열기
 start test.txt   # Windows
 open test.txt    # macOS
+```
+
+---
+
+## ❗️ Markdown 문법
+
+### 1. 제목
+
+```text
+# 제목 1
+## 제목 2
+### 제목 3
+```
+
+---
+
+### 2. 목록
+
+-  순서 없는 목록
+
+```text
+- 항목
+- 항목
+  - 하위 항목
+```
+
+-  순서 있는 목록
+
+```text
+1. 첫 번째
+2. 두 번째
+```
+
+---
+
+### 3. 코드
+
+- 인라인 코드
+
+```bash
+`git status`
+```
+
+- 코드 블록
+
+```bash
+git status
+```
+
+### 4. 링크
+
+```text
+[Google](https://google.com)
+```
+
+---
+
+### 5. 이미지
+
+```text
+![Git Logo](https://git-scm.com/images/logo@2x.png)
+```
+
+---
+
+### 6. 강조
+
+```text
+*기울임*
+**굵게**
+~~취소선~~
+```
+
+---
+
+### 7. 수평선
+
+```text
+---
+***
+___
 ```
 
 ---
