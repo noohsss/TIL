@@ -136,16 +136,9 @@ open test.txt    # macOS
 
 ### 3. 코드
 
-- 인라인 코드
-
-```bash
-`git status`
-```
-
-- 코드 블록
-
-```bash
-git status
+```python
+for i in range(5):
+    print(i)
 ```
 
 ### 4. 링크
