@@ -1,6 +1,7 @@
 # ⌨️ TIL - Git/Terminal 기본 명령어 및 Markdown 문법
 
-## ❗️ Git 작업 흐름
+## Git 기본 명령어
+### ❗️ Git 작업 흐름
 
 ```text
 Working Directory
@@ -20,7 +21,7 @@ Remote Repository
 
 ---
 
-## ❗️ 자주 사용하는 명령어
+### ❗️ 자주 사용하는 명령어
 
 | 명령어 | 설명 |
 |--------|------|
@@ -36,7 +37,7 @@ Remote Repository
 
 ---
 
-## ❗️ 기본 작업 순서
+### ❗️ 기본 작업 순서
 
 ```bash
 # 저장소 생성
@@ -60,7 +61,8 @@ git push
 
 ---
 
-## ❗️Terminal 기본 명령어
+## Terminal 기본 명령어
+### ❗️ 자주사용하는 명령어
 
 | 명령어 | 설명 |
 |--------|------|
@@ -73,7 +75,7 @@ git push
 
 ---
 
-## ❗️사용 예시
+### ❗️사용 예시
 
 ```bash
 # project 폴더 생성
@@ -101,7 +103,7 @@ open test.txt    # macOS
 
 ---
 
-## ❗️ Markdown 문법
+## Markdown 문법
 
 ### 1. 제목
 
