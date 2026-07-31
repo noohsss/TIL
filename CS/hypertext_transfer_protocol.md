@@ -1,6 +1,4 @@
-# 네트워크 기초
-
-## HTTP (HyperText Transfer Protocol)
+# HTTP (HyperText Transfer Protocol)
 
 HTTP는 **클라이언트(Client)와 서버(Server)가 데이터를 주고받기 위한 통신 규약(Protocol)**이다.
 웹 브라우저가 서버에 요청(Request)을 보내고, 서버가 응답(Response)을 반환하는 방식으로 동작한다.
