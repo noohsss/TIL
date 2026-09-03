@@ -161,6 +161,8 @@ for chunk in chain.stream({"question": "LangChain을 설명해줘."}):
     print(chunk, end="", flush=True)
 ```
 
+비동기 코드에서는 `ainvoke()`, `abatch()`, `astream()`을 사용한다. 같은 Runnable에 여러 입력을 적용할 때는 `abatch()`가 편하고, 서로 다른 비동기 작업을 조합할 때는 `asyncio.gather()`를 사용할 수 있다.
+
 ## 토큰과 오류 처리
 
 토큰 사용량은 `AIMessage.usage_metadata`에서 확인한다. 입력과 출력이 길어질수록 비용과 응답 시간이 늘어난다.
@@ -330,3 +332,200 @@ with ls.tracing_context(
 | `ChatGoogleGenerativeAI(...).invoke()` | Gemini `generateContent` 계열 | LangChain Runnable·LCEL 사용 |
 
 LangChain은 모델 호출을 통일된 인터페이스로 감싸고 프롬프트, 파서, 메모리, Tool, LangSmith 추적을 연결하기 쉽게 한다.
+
+## 대화 메모리
+
+LLM 호출은 기본적으로 이전 요청을 기억하지 않는다. 이전 메시지를 다음 호출에도 함께 보내야 한다.
+
+```python
+messages = [
+    SystemMessage(content="너는 친절한 상담사야."),
+    HumanMessage(content="내 이름은 철수야."),
+]
+
+response = llm.invoke(messages)
+messages.extend([
+    response,
+    HumanMessage(content="내 이름이 뭐야?"),
+])
+response = llm.invoke(messages)
+```
+
+### `InMemoryChatMessageHistory`
+
+메시지를 세션별로 보관하는 LangChain Core 구현이다.
+
+```python
+from langchain_core.chat_history import InMemoryChatMessageHistory
+
+history_store = {}
+
+def get_history(session_id):
+    if session_id not in history_store:
+        history_store[session_id] = InMemoryChatMessageHistory()
+    return history_store[session_id]
+
+def chat(session_id: str, user_input: str) -> str:
+    history = get_history(session_id)
+    user_message = HumanMessage(content=user_input)
+    response = llm.invoke([
+        SystemMessage(content="너는 친절한 상담사야."),
+        *history.messages,
+        user_message,
+    ])
+    history.add_messages([user_message, response])
+    return response.content
+```
+
+같은 session ID는 같은 대화를 사용하고, 다른 ID는 별도 대화가 된다. 인메모리 저장소는 프로세스가 종료되면 사라지므로 실제 서비스에서는 DB나 checkpointer가 필요하다.
+
+### Context window 관리
+
+전체 대화를 저장하는 것과 모델에 전체 대화를 보내는 것은 별개다. 대화가 길어지면 토큰 비용과 지연 시간이 늘어나므로 전달할 메시지를 줄인다.
+
+- 트리밍: 최근 메시지만 전달
+- 요약: 오래된 대화를 요약해서 전달
+- 검색: 필요한 과거 정보만 검색해서 전달
+
+```python
+from langchain_core.messages import trim_messages
+
+trimmer = trim_messages(
+    max_tokens=60,
+    strategy="last",
+    token_counter=llm,
+    include_system=True,
+    start_on="human",
+)
+trimmed = trimmer.invoke(history.messages)
+response = llm.invoke(trimmed)
+```
+
+`trim_messages()`는 원본 history를 삭제하지 않고, 모델에 전달할 새 메시지 목록만 만든다.
+
+## Structured Output과 Output Parser
+
+모델의 응답을 문자열이 아닌 Python 자료형이나 Pydantic 객체로 받는 방법이다.
+
+| 방법 | 결과 | 용도 |
+|---|---|---|
+| `StrOutputParser` | `str` | 일반 텍스트 |
+| `CommaSeparatedListOutputParser` | `list[str]` | 단순 목록 |
+| `JsonOutputParser` | `dict` 또는 `list` | 유연한 JSON |
+| `PydanticOutputParser` | Pydantic 객체 | schema 검증 |
+| `with_structured_output()` | Pydantic 객체 등 | 모델의 네이티브 구조화 출력 |
+
+### PydanticOutputParser
+
+`get_format_instructions()`로 출력 규칙을 프롬프트에 넣고, 모델의 문자열 응답을 Pydantic으로 변환한다.
+
+```python
+from typing import Literal
+from pydantic import BaseModel, Field
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.prompts import PromptTemplate
+
+class SentimentResult(BaseModel):
+    sentiment: Literal["긍정", "부정", "중립"]
+    intensity: int = Field(ge=1, le=5)
+    reason: str = Field(min_length=1)
+
+parser = PydanticOutputParser(pydantic_object=SentimentResult)
+prompt = PromptTemplate.from_template(
+    "다음 문장의 감정을 분석해줘.\n문장: {text}\n{format_instructions}"
+).partial(format_instructions=parser.get_format_instructions())
+
+chain = prompt | llm | parser
+result = chain.invoke({"text": "정말 만족스러운 기능입니다."})
+```
+
+`Literal`은 허용값을 제한하고, `Field`는 숫자 범위나 문자열 길이를 제한한다. 프롬프트의 설명만으로는 값을 강제할 수 없고, parser가 형식 또는 schema 오류를 확인한다.
+
+### `with_structured_output()`
+
+지원되는 모델에서는 schema를 모델 호출에 직접 전달해 Pydantic 객체를 받을 수 있다.
+
+```python
+structured_llm = llm.with_structured_output(SentimentResult)
+result = structured_llm.invoke("배송은 빠르지만 포장이 찢어져 아쉬웠다.")
+```
+
+네이티브 구조화 출력을 지원하지 않는 모델이나 원본 JSON 문자열을 직접 다뤄야 하는 경우에는 `PydanticOutputParser`가 적합하다.
+
+검증은 다음 순서로 나눠 생각한다.
+
+```text
+JSON 문법 → schema와 타입 → 업무 규칙 → 서비스 정책
+```
+
+Pydantic은 주로 앞의 두 단계를 처리한다. 값이 문법에 맞더라도 사실인지, 업무상 올바른지는 별도 검증이 필요하다.
+
+## Tool과 Agent
+
+Tool은 LLM이 외부 세계와 상호작용할 수 있도록 만든 함수다. 모델이 직접 함수를 실행하는 것은 아니고, 호출할 Tool과 인자를 반환하면 애플리케이션이 실행한다.
+
+```text
+사용자 질문 → 모델 판단 → tool_call
+→ 애플리케이션에서 함수 실행 → ToolMessage 전달 → 최종 답변
+```
+
+### `@tool`
+
+일반 Python 함수를 LangChain Tool로 바꾼다. 함수 이름, 타입 힌트, docstring이 모델에 전달되는 설명이 된다.
+
+```python
+from langchain_core.tools import tool
+
+@tool(parse_docstring=True)
+def search_weather(city: str) -> str:
+    """도시의 현재 날씨를 검색한다.
+
+    Args:
+        city: 날씨를 검색할 도시 이름
+    """
+    return f"{city}의 날씨 정보"
+```
+
+Tool 이름은 명확하게 짓고, 설명·인자 타입·예시·오류 결과를 구체적으로 작성한다.
+
+### Tool 바인딩과 실행
+
+```python
+llm_with_tools = llm.bind_tools([search_weather])
+response = llm_with_tools.invoke("서울 날씨를 알려줘.")
+
+for tool_call in response.tool_calls:
+    result = search_weather.invoke(tool_call["args"])
+    messages.append(response)
+    messages.append(
+        ToolMessage(
+            content=str(result),
+            tool_call_id=tool_call["id"],
+        )
+    )
+```
+
+`bind_tools()`는 Tool 목록을 모델에 알려줄 뿐 실제 함수를 실행하지 않는다. `AIMessage.tool_calls`를 확인하고 등록된 함수만 실행해야 한다.
+
+### Agent loop
+
+Tool 호출이 끝날 때까지 모델 호출과 함수 실행을 반복한다. 한 번에 여러 Tool을 요청할 수 있으므로 모든 호출을 처리한다.
+
+```python
+for _ in range(max_attempt):
+    response = llm_with_tools.invoke(messages)
+    messages.append(response)
+
+    if not response.tool_calls:
+        return response.content
+
+    for tool_call in response.tool_calls:
+        tool = tool_map[tool_call["name"]]
+        result = tool.invoke(tool_call["args"])
+        messages.append(ToolMessage(
+            content=str(result),
+            tool_call_id=tool_call["id"],
+        ))
+```
+
+최대 반복 횟수를 두어 무한 호출을 막는다. Tool의 이름과 허용 목록을 확인하고, 실행 오류는 모델이 이해할 수 있는 결과로 돌려준다.
